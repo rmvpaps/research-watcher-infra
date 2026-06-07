@@ -252,7 +252,7 @@ resource "aws_ecs_task_definition" "processor-task" {
   family                   = "rw-processor-task"
   network_mode             = "awsvpc"       # Required for Fargate
   requires_compatibilities = ["FARGATE"]    # Declares launch type compatibility
-  cpu                      = "1vCPU"          # 0.25 vCPU
+  cpu                      = "1024"          # 0.25 vCPU
   memory                   = "4096"          # 512 MiB
   ephemeral_storage {
         size_in_gib = 30
