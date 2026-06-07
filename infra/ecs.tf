@@ -254,8 +254,8 @@ resource "aws_ecs_task_definition" "processor-task" {
   requires_compatibilities = ["FARGATE"]    # Declares launch type compatibility
   cpu                      = "1vCPU"          # 0.25 vCPU
   memory                   = "4096"          # 512 MiB
-  ephemeralStorage {
-        sizeInGiB = 30
+  ephemeral_storage {
+        size_in_gib = 30
     }
   execution_role_arn       = aws_iam_role.ecs_execution_role.arn
 
