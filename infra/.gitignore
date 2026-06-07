@@ -1,0 +1,19 @@
+# Local directory for Terraform binaries and provider plugins
+.terraform/
+
+# Hide local state files (since we use an S3 remote backend)
+*.tfstate
+*.tfstate.*
+
+# Crash logs
+crash.log
+crash.*.log
+
+# Hide your variable value files (where passwords or custom values live)
+*.tfvars
+*.tfvars.json
+
+# Override files
+override.tf
+override.tf.json
+.terraform.tfstate.lock.info
