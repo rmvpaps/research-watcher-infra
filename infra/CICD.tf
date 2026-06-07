@@ -12,7 +12,7 @@ resource "aws_iam_role" "codebuild_role" {
     Statement = [{
       Action    = "sts:AssumeRole"
       Effect    = "Allow"
-      Principal = { Service = "://amazonaws.com" }
+      Principal = { Service = "codebuild.amazonaws.com" }
     }]
   })
 }
@@ -147,7 +147,7 @@ resource "aws_iam_role" "codepipeline_role" {
     Statement = [{
       Action    = "sts:AssumeRole"
       Effect    = "Allow"
-      Principal = { Service = "://amazonaws.com" }
+      Principal = { Service = "codepipeline.amazonaws.com" }
     }]
   })
 }
@@ -170,7 +170,7 @@ resource "aws_codepipeline" "app_pipeline" {
   role_arn = aws_iam_role.codepipeline_role.arn
 
   artifact_store {
-    location = aws_s3_bucket.pipeline_bucket.bucket
+    location = aws_s3_bucket.pipeline-bucket.bucket
     type     = "S3"
   }
 
