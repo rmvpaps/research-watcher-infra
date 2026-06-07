@@ -158,6 +158,7 @@ resource "aws_ecs_task_definition" "scraper-task" {
       name      = "scraper-app"
       image     = "${aws_ecr_repository.rw_scraper.repository_url}:latest"
       essential = true
+      command   = ["uv", "run", "--no-sync", "python", "-m", "scraper.main"]
       
       # Pulling the .env file from S3
       environmentFiles = [
@@ -170,11 +171,62 @@ resource "aws_ecs_task_definition" "scraper-task" {
       # Pulling individual protected variables from Secrets Manager
       secrets = [
         {
-          name      = "DATABASE_PASSWORD"
+          name      = "POSTGRES_PASSWORD"
           valueFrom = "${aws_secretsmanager_secret.db_secret_metadata.arn}:password::" # 
         },
         {
-          name      = "PROXY_API_KEY"
+          name      = "llm_api_key"
+          valueFrom = "${aws_secretsmanager_secret.api_key_container.arn}:grok_api_key::" 
+        }
+      ]
+
+      environment = [
+        { name = "PYTHONPATH", value = "/app/src" }
+      ]
+
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = "/awslogs-research-watcher"
+          "awslogs-region"        = "us-east-2"
+          "awslogs-stream-prefix" = "scraper"
+        }
+      }
+    }
+  ])
+}
+
+resource "aws_ecs_task_definition" "migrate-helper-task" {
+  family                   = "rw-migrate-helper-task"
+  network_mode             = "awsvpc"       # Required for Fargate
+  requires_compatibilities = ["FARGATE"]    # Declares launch type compatibility
+  cpu                      = "256"          # 0.25 vCPU
+  memory                   = "512"          # 512 MiB
+  execution_role_arn       = aws_iam_role.ecs_execution_role.arn
+
+  # Define container configurations inside a valid JSON array
+  container_definitions = jsonencode([
+    {
+      name      = "scraper-app"
+      image     = "${aws_ecr_repository.rw_scraper.repository_url}:latest"
+      essential = true
+      command   = ["uv", "run", "alembic", "upgrade", "head"]
+      # Pulling the .env file from S3
+      environmentFiles = [
+        {
+          value = "${aws_s3_bucket.research-watcher-config.arn}/scraper-aws.env"
+          type  = "s3"
+        }
+      ]
+
+      # Pulling individual protected variables from Secrets Manager
+      secrets = [
+        {
+          name      = "POSTGRES_PASSWORD"
+          valueFrom = "${aws_secretsmanager_secret.db_secret_metadata.arn}:password::" # 
+        },
+        {
+          name      = "llm_api_key"
           valueFrom = "${aws_secretsmanager_secret.api_key_container.arn}:grok_api_key::" 
         }
       ]
@@ -196,6 +248,61 @@ resource "aws_ecs_task_definition" "scraper-task" {
 }
 
 
+resource "aws_ecs_task_definition" "processor-task" {
+  family                   = "rw-processor-task"
+  network_mode             = "awsvpc"       # Required for Fargate
+  requires_compatibilities = ["FARGATE"]    # Declares launch type compatibility
+  cpu                      = "1vCPU"          # 0.25 vCPU
+  memory                   = "4096"          # 512 MiB
+  ephemeralStorage {
+        sizeInGiB = 30
+    }
+  execution_role_arn       = aws_iam_role.ecs_execution_role.arn
+
+  # Define container configurations inside a valid JSON array
+  container_definitions = jsonencode([
+    {
+      name      = "processor-app"
+      image     = "${aws_ecr_repository.rw_processor.repository_url}:latest"
+      essential = true
+      command = ["uv", "run", "--no-sync","--directory","/app", "python", "-m", "processor.main"]
+      
+      # Pulling the .env file from S3
+      environmentFiles = [
+        {
+          value = "${aws_s3_bucket.research-watcher-config.arn}/scraper-aws.env"
+          type  = "s3"
+        }
+      ]
+
+      # Pulling individual protected variables from Secrets Manager
+      secrets = [
+        {
+          name      = "POSTGRES_PASSWORD"
+          valueFrom = "${aws_secretsmanager_secret.db_secret_metadata.arn}:password::" # 
+        },
+        {
+          name      = "llm_api_key"
+          valueFrom = "${aws_secretsmanager_secret.api_key_container.arn}:grok_api_key::" 
+        }
+      ]
+
+      environment = [
+        { name = "PYTHONPATH", value = "/app/src" }
+      ]
+
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = "/awslogs-research-watcher"
+          "awslogs-region"        = "us-east-2"
+          "awslogs-stream-prefix" = "processor"
+        }
+      }
+    }
+  ])
+}
+
 # ==========================================
 # 5. BACKEND: Scheduler triggering task
 # ==========================================
@@ -206,7 +313,7 @@ resource "aws_cloudwatch_event_rule" "weekly_scraper_schedule" {
   
   # Cron format: (Minutes Hours Day-of-Month Month Day-of-Week Year)
   # 0 12 * * 1 * means: 00 minutes, 12 hours (Noon), every day of month, every month, Day 1 (Sunday in AWS Cron), every year.
-  schedule_expression = "cron(0 12 * * 1 *)"
+  schedule_expression = "cron(0 12 ? * 1 *)"
 }
 
 #permisison 
