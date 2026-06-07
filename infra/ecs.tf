@@ -349,7 +349,8 @@ resource "aws_iam_role_policy" "eventbridge_ecs_policy" {
         ]
         # Restrict it to running your specific scraper task definition family
         Resource = [
-          "${replace(aws_ecs_task_definition.scraper-task.arn, "/:\\d+$/", ":*")}"
+          "${replace(aws_ecs_task_definition.scraper-task.arn, "/:\\d+$/", ":*")}",
+          "${replace(aws_ecs_task_definition.processor-task.arn, "/:\\d+$/", ":*")}"
         ]
       },
       {
@@ -377,6 +378,43 @@ resource "aws_cloudwatch_event_target" "scraper_target" {
   ecs_target {
     task_count          = 1
     task_definition_arn = aws_ecs_task_definition.scraper-task.arn
+    launch_type         = "FARGATE"
+    platform_version    = "LATEST"
+
+    # Because Fargate requires the awsvpc network mode, 
+    # we must explicitly pass the subnet and security group topology targets here
+    network_configuration {
+      subnets          = [aws_subnet.public_a.id] 
+      security_groups  = [aws_security_group.vpc_internal.id]       # 🟢 Reuses your default/app SG
+      assign_public_ip = true                                 # Required if running in a public subnet to pull ECR images
+    }
+  }
+}
+
+
+########## processor daily
+
+resource "aws_cloudwatch_event_rule" "daily_processor_schedule" {
+  name        = "rw-processor-daily-noon"
+  description = "Triggers the research watcher processor ECS task every Sunday at noon UTC"
+  
+  # Cron format: (Minutes Hours Day-of-Month Month Day-of-Week Year)
+  # 0 12 * * ? * means: 00 minutes, 12 hours (Noon), every day of month, every month, any day of week, every year.
+  schedule_expression = "cron(0 12 * * ? *)"
+}
+
+
+
+# scheduler that triggers ecs task
+resource "aws_cloudwatch_event_target" "processor_target" {
+  rule      = aws_cloudwatch_event_rule.daily_processor_schedule.name
+  target_id = "TriggerDailyProcessorTask"
+  arn       = aws_ecs_cluster.watcher_cluster.arn
+  role_arn  = aws_iam_role.scheduler_execution_role.arn
+
+  ecs_target {
+    task_count          = 1
+    task_definition_arn = aws_ecs_task_definition.processor-task.arn
     launch_type         = "FARGATE"
     platform_version    = "LATEST"
 
