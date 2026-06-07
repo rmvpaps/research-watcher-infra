@@ -64,6 +64,6 @@ resource "aws_s3_bucket" "research-watcher-config" {
 # CICD: S3 artifact bucket
 # ==========================================
 
-resource "aws_s3_bucket" "pipeline_bucket" {
-  bucket = "app-researchwatcher-pipeline_bucket"
+resource "aws_s3_bucket" "pipeline-bucket" {
+  bucket = "app-researchwatcher-pipeline-bucket"
 }
