@@ -76,3 +76,9 @@ resource "aws_db_instance" "postgres" {
   skip_final_snapshot    = true # Prevents Terraform from hanging indefinitely during deletions
   deletion_protection  = false
 }
+
+
+output "db_endpoint" {
+  description = "The connection host for the database"
+  value       = "${aws_db_instance.postgres.endpoint}"
+}

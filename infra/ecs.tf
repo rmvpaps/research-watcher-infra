@@ -28,14 +28,14 @@ resource "aws_ecs_cluster_capacity_providers" "watcher_providers" {
 # repository for scraper
 resource "aws_ecr_repository" "rw_scraper" {
   name                 = "rw-scraper"
-  image_tag_mutability = "IMMUTABLE"
+  image_tag_mutability = "MUTABLE"
 
 }
 
 # repository for processor
 resource "aws_ecr_repository" "rw_processor" {
   name                 = "rw-processor"
-  image_tag_mutability = "IMMUTABLE"
+  image_tag_mutability = "MUTABLE"
 
 }
 
