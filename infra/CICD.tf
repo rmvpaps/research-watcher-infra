@@ -72,7 +72,8 @@ resource "aws_iam_role_policy" "codebuild_policy" {
             ]
         Resource = [
              "${replace(aws_ecs_cluster.watcher_cluster.arn, ":cluster/", ":task/")}/*",
-             "${aws_ecs_task_definition.scraper-task.arn}"
+             "${aws_ecs_task_definition.scraper-task.arn}",
+             "${aws_ecs_task_definition.processor-task.arn}"
         ] 
       },
       {
@@ -82,7 +83,8 @@ resource "aws_iam_role_policy" "codebuild_policy" {
                 "events:DescribeRule"
                 ]
         Resource= [
-            aws_cloudwatch_event_rule.weekly_scraper_schedule.arn
+            aws_cloudwatch_event_rule.weekly_scraper_schedule.arn,
+            aws_cloudwatch_event_rule.daily_processor_schedule.arn
         ]
       },
        {
@@ -130,7 +132,52 @@ resource "aws_codebuild_project" "buildscraper" {
 
 
 
+resource "aws_codebuild_project" "buildprocessor" {
+  name          = "build_processor"
+  build_timeout = "5"
+  service_role  = aws_iam_role.codebuild_role.arn
 
+  artifacts {
+    type = "CODEPIPELINE" # Must be CODEPIPELINE when used inside a pipeline
+  }
+
+  environment {
+    compute_type                = "BUILD_GENERAL1_SMALL"
+    image                       = "aws/codebuild/amazonlinux2-x86_64-standard:5.0"
+    type                        = "LINUX_CONTAINER"
+    image_pull_credentials_type = "CODEBUILD"
+  }
+
+  source {
+    type = "CODEPIPELINE" # CodePipeline will feed the source files here
+    buildspec = "buildspec_processor.yml" 
+  }
+  
+}
+
+
+resource "aws_codebuild_project" "buildapi" {
+  name          = "build_api"
+  build_timeout = "5"
+  service_role  = aws_iam_role.codebuild_role.arn
+
+  artifacts {
+    type = "CODEPIPELINE" # Must be CODEPIPELINE when used inside a pipeline
+  }
+
+  environment {
+    compute_type                = "BUILD_GENERAL1_SMALL"
+    image                       = "aws/codebuild/amazonlinux2-x86_64-standard:5.0"
+    type                        = "LINUX_CONTAINER"
+    image_pull_credentials_type = "CODEBUILD"
+  }
+
+  source {
+    type = "CODEPIPELINE" # CodePipeline will feed the source files here
+    buildspec = "buildspec_api.yml" 
+  }
+  
+}
 
 
 
@@ -153,6 +200,57 @@ resource "aws_iam_role" "codepipeline_role" {
 }
 
 
+# Attach basic execution policies to codepipeline (Logs, S3, etc.)
+resource "aws_iam_role_policy" "codepipelinepolicy" {
+  name = "codepipeline-policy"
+  role = aws_iam_role.codepipeline_role.name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"]
+        Resource = ["*"]
+      },
+      {
+        Effect   = "Allow"
+        Action   = [
+                    "s3:GetBucketVersioning","s3:GetBucketAcl","s3:GetBucketLocation",
+                    "s3:GetObject", "s3:GetObjectVersion", "s3:PutObject","s3:PutObjectAcl"]
+        Resource = [
+                    aws_s3_bucket.pipeline-bucket.arn,
+                    "${aws_s3_bucket.pipeline-bucket.arn}/*"]
+      },
+      {
+        Effect  = "Allow"
+        Action  = [
+                "codebuild:BatchGetBuilds",
+                "codebuild:StartBuild",
+                "codebuild:BatchGetBuildBatches",
+                "codebuild:StartBuildBatch",
+                "codebuild:CreateReportGroup",
+                "codebuild:CreateReport",
+                "codebuild:UpdateReport",
+                "codebuild:BatchPutTestCases",
+                "codebuild:BatchPutCodeCoverages"
+            ]
+        Resource = ["*"]
+      },
+      {
+        Effect  = "Allow"
+        Action  = [
+                "codeconnections:UseConnection",
+                "codestar-connections:UseConnection"
+            ]
+        Resource = [
+            aws_codestarconnections_connection.github.arn
+        ] 
+      }
+      
+    ]
+  })
+}
 
 
 
@@ -188,7 +286,7 @@ resource "aws_codepipeline" "app_pipeline" {
 
       configuration = {
         ConnectionArn    = aws_codestarconnections_connection.github.arn
-        FullRepositoryId = "your-github-username/your-repo-name" # Format: org/repo or user/repo
+        FullRepositoryId = "rmvpaps/vton-research-watcher" # Format: org/repo or user/repo
         BranchName       = "staging"
         
         # Automatically trigger the pipeline on git push
@@ -201,7 +299,34 @@ resource "aws_codepipeline" "app_pipeline" {
   stage {
     name = "Build"
     action {
-      name             = "BuildAction"
+      name             = "BuildScraper"
+      category         = "Build"
+      owner            = "AWS"
+      provider         = "CodeBuild"
+      version          = "1"
+      input_artifacts  = ["source_output"]
+
+      configuration = {
+        ProjectName = aws_codebuild_project.buildscraper.name
+      }
+    }
+
+    action {
+      name             = "BuildProcessor"
+      category         = "Build"
+      owner            = "AWS"
+      provider         = "CodeBuild"
+      version          = "1"
+      input_artifacts  = ["source_output"]
+
+
+      configuration = {
+        ProjectName = aws_codebuild_project.buildprocessor.name
+      }
+    }
+
+    action {
+      name             = "BuildAPI"
       category         = "Build"
       owner            = "AWS"
       provider         = "CodeBuild"
@@ -210,7 +335,7 @@ resource "aws_codepipeline" "app_pipeline" {
       output_artifacts = ["build_output"]
 
       configuration = {
-        ProjectName = aws_codebuild_project.buildscraper.name
+        ProjectName = aws_codebuild_project.buildapi.name
       }
     }
   }
@@ -227,7 +352,7 @@ resource "aws_codepipeline" "app_pipeline" {
       input_artifacts = ["build_output"]
 
       configuration = {
-        FunctionName = "my-pipeline-lambda"
+        FunctionName = aws_lambda_function.fastapi.id
       }
     }
   }
