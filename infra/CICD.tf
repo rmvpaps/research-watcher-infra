@@ -49,7 +49,15 @@ resource "aws_iam_role_policy" "codebuild_policy" {
       {
         Effect  = "Allow"
         Action  = [
-                "ecr:GetAuthorizationToken",
+                "ecr:GetAuthorizationToken"
+            ]
+        Resource = [
+            "*"
+        ] 
+      },
+      {
+        Effect  = "Allow"
+        Action  = [
                 "ecr:CompleteLayerUpload",
                 "ecr:UploadLayerPart",
                 "ecr:InitiateLayerUpload",
@@ -64,16 +72,27 @@ resource "aws_iam_role_policy" "codebuild_policy" {
       {
         Effect  = "Allow"
         Action  = [
+                
+                "ecs:RegisterTaskDefinition",
+                "ecs:DescribeTaskDefinition"
+            ]
+        Resource = [
+             "*"
+        ] 
+      },
+      {
+        Effect  = "Allow"
+        Action  = [
                 "ecs:RunTask",
                 "ecs:ListTasks",
-                "ecs:RegisterTaskDefinition",
-                "ecs:DescribeTaskDefinition",
                 "ecs:DescribeTasks",
             ]
         Resource = [
              "${replace(aws_ecs_cluster.watcher_cluster.arn, ":cluster/", ":task/")}/*",
-             "${aws_ecs_task_definition.scraper-task.arn}",
-             "${aws_ecs_task_definition.processor-task.arn}"
+             "${replace(aws_ecs_task_definition.scraper-task.arn, "/:\\d+$/" ,":*" )}",
+             "${replace(aws_ecs_task_definition.processor-task.arn, "/:\\d+$/" ,":*" )}",
+             "${replace(aws_ecs_task_definition.migrate-helper-task.arn, "/:\\d+$/" ,":*" )}",
+             aws_ecs_cluster.watcher_cluster.arn
         ] 
       },
       {
@@ -123,6 +142,69 @@ resource "aws_codebuild_project" "buildscraper" {
     image                       = "aws/codebuild/amazonlinux2-x86_64-standard:5.0"
     type                        = "LINUX_CONTAINER"
     image_pull_credentials_type = "CODEBUILD"
+    privileged_mode             = true
+
+
+    environment_variable {
+      name  = "CLUSTER_NAME"
+      value = aws_ecs_cluster.watcher_cluster.name
+      type  = "PLAINTEXT"          # Options: PLAINTEXT, PARAMETER_STORE, SECRETS_MANAGER
+    }
+
+    environment_variable {
+      name  = "MIGRATE_TASK_NAME"
+      value = aws_ecs_task_definition.migrate-helper-task.family
+      type  = "PLAINTEXT"          # Options: PLAINTEXT, PARAMETER_STORE, SECRETS_MANAGER
+    }
+
+    environment_variable {
+      name  = "SCRAPER_TASK_NAME"
+      value = aws_ecs_task_definition.scraper-task.family
+      type  = "PLAINTEXT"          # Options: PLAINTEXT, PARAMETER_STORE, SECRETS_MANAGER
+    }
+
+    environment_variable {
+      name  = "MY_CRON_RULE"
+      value = aws_cloudwatch_event_rule.weekly_scraper_schedule.name
+      type  = "PLAINTEXT"          # Options: PLAINTEXT, PARAMETER_STORE, SECRETS_MANAGER
+    }
+
+    environment_variable {
+      name  = "REPOSITORY_URI"
+      value = aws_ecr_repository.rw_scraper.repository_url
+      type  = "PLAINTEXT"          # Options: PLAINTEXT, PARAMETER_STORE, SECRETS_MANAGER
+    }
+
+    environment_variable {
+      name  = "SUBNET_ID"
+      value = aws_subnet.public_a.id
+      type  = "PLAINTEXT"          # Options: PLAINTEXT, PARAMETER_STORE, SECRETS_MANAGER
+    }
+
+    environment_variable {
+      name  = "SG_ID"
+      value = aws_security_group.vpc_internal.id
+      type  = "PLAINTEXT"          # Options: PLAINTEXT, PARAMETER_STORE, SECRETS_MANAGER
+    }
+
+    environment_variable {
+      name  = "MY_TARGET_ARN"
+      value = aws_ecs_cluster.watcher_cluster.arn
+      type  = "PLAINTEXT"          # Options: PLAINTEXT, PARAMETER_STORE, SECRETS_MANAGER
+    }
+
+    environment_variable {
+      name  = "MY_ROLE_ARN"
+      value = aws_iam_role.scheduler_execution_role.arn
+      type  = "PLAINTEXT"          # Options: PLAINTEXT, PARAMETER_STORE, SECRETS_MANAGER
+    }
+
+    
+    
+    
+    
+    
+    
   }
 
   source {
@@ -146,6 +228,60 @@ resource "aws_codebuild_project" "buildprocessor" {
     image                       = "aws/codebuild/amazonlinux2-x86_64-standard:5.0"
     type                        = "LINUX_CONTAINER"
     image_pull_credentials_type = "CODEBUILD"
+    privileged_mode             = true
+
+
+    environment_variable {
+      name  = "SECRET_NAME_VAR"
+      value = aws_secretsmanager_secret.api_key_container.name
+      type  = "PLAINTEXT"          # Options: PLAINTEXT, PARAMETER_STORE, SECRETS_MANAGER
+    }
+
+    environment_variable {
+      name  = "TASK_NAME"
+      value = aws_ecs_task_definition.processor-task.family
+      type  = "PLAINTEXT"          # Options: PLAINTEXT, PARAMETER_STORE, SECRETS_MANAGER
+    }
+
+
+    
+    environment_variable {
+      name  = "MY_CRON_RULE"
+      value = aws_cloudwatch_event_rule.daily_processor_schedule.name
+      type  = "PLAINTEXT"          # Options: PLAINTEXT, PARAMETER_STORE, SECRETS_MANAGER
+    }
+
+    environment_variable {
+      name  = "REPOSITORY_URI"
+      value = aws_ecr_repository.rw_processor.repository_url
+      type  = "PLAINTEXT"          # Options: PLAINTEXT, PARAMETER_STORE, SECRETS_MANAGER
+    }
+
+    environment_variable {
+      name  = "SUBNET_ID"
+      value = aws_subnet.public_a.id
+      type  = "PLAINTEXT"          # Options: PLAINTEXT, PARAMETER_STORE, SECRETS_MANAGER
+    }
+
+    environment_variable {
+      name  = "SG_ID"
+      value = aws_security_group.vpc_internal.id
+      type  = "PLAINTEXT"          # Options: PLAINTEXT, PARAMETER_STORE, SECRETS_MANAGER
+    }
+
+    environment_variable {
+      name  = "MY_TARGET_ARN"
+      value = aws_ecs_cluster.watcher_cluster.arn
+      type  = "PLAINTEXT"          # Options: PLAINTEXT, PARAMETER_STORE, SECRETS_MANAGER
+    }
+
+    environment_variable {
+      name  = "MY_ROLE_ARN"
+      value = aws_iam_role.scheduler_execution_role.arn
+      type  = "PLAINTEXT"          # Options: PLAINTEXT, PARAMETER_STORE, SECRETS_MANAGER
+    }
+
+
   }
 
   source {
@@ -170,6 +306,19 @@ resource "aws_codebuild_project" "buildapi" {
     image                       = "aws/codebuild/amazonlinux2-x86_64-standard:5.0"
     type                        = "LINUX_CONTAINER"
     image_pull_credentials_type = "CODEBUILD"
+
+
+    environment_variable {
+      name  = "SECRET_NAME_VAR"
+      value = aws_secretsmanager_secret.db_secret_metadata.name
+      type  = "PLAINTEXT"          # Options: PLAINTEXT, PARAMETER_STORE, SECRETS_MANAGER
+    }
+
+    environment_variable {
+      name  = "CONFIG_BUCKET_NAME"
+      value = aws_s3_bucket.research-watcher-config.bucket
+      type  = "PLAINTEXT"          # Options: PLAINTEXT, PARAMETER_STORE, SECRETS_MANAGER
+    }
   }
 
   source {
@@ -297,7 +446,7 @@ resource "aws_codepipeline" "app_pipeline" {
 
   # Stage 2: Build Stage (Stays the same as before)
   stage {
-    name = "Build"
+    name = "BuildScraper"
     action {
       name             = "BuildScraper"
       category         = "Build"
@@ -310,6 +459,9 @@ resource "aws_codepipeline" "app_pipeline" {
         ProjectName = aws_codebuild_project.buildscraper.name
       }
     }
+  }
+  stage {
+    name = "Buildprocessor"
 
     action {
       name             = "BuildProcessor"
@@ -324,7 +476,9 @@ resource "aws_codepipeline" "app_pipeline" {
         ProjectName = aws_codebuild_project.buildprocessor.name
       }
     }
-
+  }
+  stage {
+    name = "BuildAPI"
     action {
       name             = "BuildAPI"
       category         = "Build"
@@ -339,6 +493,7 @@ resource "aws_codepipeline" "app_pipeline" {
       }
     }
   }
+
 
   # Stage 3: Deploy Stage (Stays the same as before)
   stage {
