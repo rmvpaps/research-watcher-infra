@@ -70,6 +70,12 @@ resource "aws_secretsmanager_secret_version" "api_key_value" {
 # 4. BACKEND: ECS task execution_role
 # ==========================================
 
+
+resource "aws_cloudwatch_log_group" "research_watcher" {
+  name              = "/awslogs-research-watcher"
+  retention_in_days = 14 
+}
+
 resource "aws_iam_role_policy" "ecs_execution_policy" {
   name = "rw-ecs-execution-policy"
   role = aws_iam_role.ecs_execution_role.id
@@ -85,8 +91,6 @@ resource "aws_iam_role_policy" "ecs_execution_policy" {
           "ecr:BatchCheckLayerAvailability",
           "ecr:GetDownloadUrlForLayer",
           "ecr:BatchGetImage",
-          "logs:CreateLogStream",
-          "logs:PutLogEvents"
         ]
         Resource = "*"
       },
@@ -112,10 +116,24 @@ resource "aws_iam_role_policy" "ecs_execution_policy" {
           aws_secretsmanager_secret.db_secret_metadata.arn,
           aws_secretsmanager_secret.api_key_container.arn
         ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+        Resource = [
+          aws_cloudwatch_log_group.research_watcher.arn,
+          "${aws_cloudwatch_log_group.research_watcher.arn}:*"
+        ]
       }
+      
     ]
   })
 }
+
+
 
 resource "aws_iam_role" "ecs_execution_role" {
   name = "rw-scraper-ecs-execution-role"
@@ -181,7 +199,8 @@ resource "aws_ecs_task_definition" "scraper-task" {
       ]
 
       environment = [
-        { name = "PYTHONPATH", value = "/app/src" }
+        { name = "PYTHONPATH", value = "/app/src" },
+        { name = "db_host", value = "${aws_db_instance.postgres.endpoint}" }
       ]
 
       logConfiguration = {
@@ -232,7 +251,8 @@ resource "aws_ecs_task_definition" "migrate-helper-task" {
       ]
 
       environment = [
-        { name = "PYTHONPATH", value = "/app/src" }
+        { name = "PYTHONPATH", value = "/app/src" },
+        { name = "db_host", value = "${aws_db_instance.postgres.endpoint}" }
       ]
 
       logConfiguration = {
@@ -288,7 +308,8 @@ resource "aws_ecs_task_definition" "processor-task" {
       ]
 
       environment = [
-        { name = "PYTHONPATH", value = "/app/src" }
+        { name = "PYTHONPATH", value = "/app/src" },
+        { name = "db_host", value = "${aws_db_instance.postgres.endpoint}" }
       ]
 
       logConfiguration = {
