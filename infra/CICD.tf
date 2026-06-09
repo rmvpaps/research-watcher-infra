@@ -32,7 +32,15 @@ resource "aws_iam_role_policy" "codebuild_policy" {
       },
       {
         Effect   = "Allow"
-        Action   = ["s3:GetObject", "s3:GetObjectVersion", "s3:PutObject"]
+        Action   = [
+                "s3:GetObject", 
+                "s3:GetObjectVersion", 
+                "s3:PutObject",
+                "s3:ListBucket",
+                "s3:DeleteObject",
+                "s3:GetBucketAcl",
+                "s3:GetBucketLocation"
+                ]
         Resource = ["*"]
       },
       {
@@ -120,6 +128,19 @@ resource "aws_iam_role_policy" "codebuild_policy" {
         Resource= [
             aws_secretsmanager_secret.db_secret_metadata.arn,
             aws_secretsmanager_secret.api_key_container.arn
+        ]
+      },
+      {
+        Effect  = "Allow"
+        Action  = [
+            "codestar-connections:GetConnectionToken",
+            "codestar-connections:GetConnection",
+            "codeconnections:GetConnectionToken",
+            "codeconnections:GetConnection",
+            "codeconnections:UseConnection"
+        ]
+        Resource=[
+            aws_codestarconnections_connection.github.arn
         ]
       }
     ]
@@ -216,7 +237,7 @@ resource "aws_codebuild_project" "buildscraper" {
 
 resource "aws_codebuild_project" "buildprocessor" {
   name          = "build_processor"
-  build_timeout = "5"
+  build_timeout = "10"
   service_role  = aws_iam_role.codebuild_role.arn
 
   artifacts {
@@ -318,6 +339,12 @@ resource "aws_codebuild_project" "buildapi" {
       name  = "CONFIG_BUCKET_NAME"
       value = aws_s3_bucket.research-watcher-config.bucket
       type  = "PLAINTEXT"          # Options: PLAINTEXT, PARAMETER_STORE, SECRETS_MANAGER
+    } 
+
+    environment_variable {
+      name  = "DBHOST"
+      value = "${aws_db_instance.postgres.endpoint}"
+      type  = "PLAINTEXT"          # Options: PLAINTEXT, PARAMETER_STORE, SECRETS_MANAGER
     }
   }
 
@@ -328,6 +355,47 @@ resource "aws_codebuild_project" "buildapi" {
   
 }
 
+
+
+resource "aws_codebuild_project" "buildfrontend" {
+  name          = "build_frontend"
+  build_timeout = "10"
+  service_role  = aws_iam_role.codebuild_role.arn
+
+  artifacts { type = "NO_ARTIFACTS" }
+  
+  environment {
+    compute_type                = "BUILD_GENERAL1_SMALL"
+    image                       = "aws/codebuild/amazonlinux2-x86_64-standard:5.0"
+    type                        = "LINUX_CONTAINER"
+    image_pull_credentials_type = "CODEBUILD"
+
+
+    environment_variable {
+      name  = "DEPLOY_BUCKET"
+      value = aws_s3_bucket.frontend.bucket
+      type  = "PLAINTEXT"          # Options: PLAINTEXT, PARAMETER_STORE, SECRETS_MANAGER
+    }
+
+    environment_variable {
+      name  = "REACT_APP_API_URL"
+      value = aws_apigatewayv2_stage.staging.invoke_url
+      type  = "PLAINTEXT"          # Options: PLAINTEXT, PARAMETER_STORE, SECRETS_MANAGER
+    } 
+
+  }
+
+  source {
+    type            = "GITHUB"
+    location        = "https://github.com/rmvpaps/research-watcher-webapp.git"
+    git_clone_depth = 1
+    buildspec       = "buildspec.yml"
+        
+  }
+  source_version = "staging"
+
+  
+}
 
 
 
@@ -395,6 +463,20 @@ resource "aws_iam_role_policy" "codepipelinepolicy" {
         Resource = [
             aws_codestarconnections_connection.github.arn
         ] 
+      },
+      {
+        Effect  = "Allow"
+        Action  = [
+                "lambda:GetAlias",
+                "lambda:GetFunctionConfiguration",
+                "lambda:GetProvisionedConcurrencyConfig",
+                "lambda:PublishVersion",
+                "lambda:UpdateAlias",
+                "lambda:UpdateFunctionCode",
+        ]
+        Resource    = [
+            aws_lambda_function.fastapi.arn
+        ]
       }
       
     ]
@@ -477,6 +559,7 @@ resource "aws_codepipeline" "app_pipeline" {
       }
     }
   }
+  
   stage {
     name = "BuildAPI"
     action {
