@@ -60,7 +60,7 @@ resource "aws_db_instance" "postgres" {
   engine               = "postgres"
   engine_version       = "18.3"
   instance_class       = "db.t4g.micro" # Free-Tier eligible footprint instance
-  
+  db_name              = "vton_research"
   # Credentials matching our structural values
   username             = "postgres"
   password             = random_password.db_password.result

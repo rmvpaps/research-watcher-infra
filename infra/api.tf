@@ -54,13 +54,16 @@ EOF
 resource "aws_lambda_function" "fastapi" {
   function_name = "researchwatcher-backend-staging"
   runtime       = "python3.13"
-  handler       = "main.handler" # Points to your Mangum handler script
+  handler       = "api.main.handler" # Points to your Mangum handler script
   role          = aws_iam_role.lambda_role.arn
   
   environment {
     variables = {
       # Resolves your dynamic CORS issue at deployment execution time!
-      FRONTEND_ORIGIN = "http://${aws_s3_bucket_website_configuration.frontend_hosting.website_endpoint}"
+      FRONTEND_ORIGIN = "http://${aws_s3_bucket_website_configuration.frontend_hosting.website_endpoint}",
+      db_host = "${aws_db_instance.postgres.endpoint}",
+      # TODO: temporarily . load it in code
+      POSTGRES_PASSWORD = "${random_password.db_password.result}"
     }
   }
 
