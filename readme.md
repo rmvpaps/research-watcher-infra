@@ -19,6 +19,9 @@ Need AWS CLI and a profile with access keys setup in system since that is how pr
 3. terraform validate
 4. terraform apply
 
+To delete the entire infrastructure
+
+terraform destroy
 
 ## Architecture
 
